@@ -18,6 +18,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <cutils/properties.h>
 #include <sys/mman.h>
 
@@ -321,6 +322,24 @@ int gpu_context_t::alloc_impl(int w, int h, int format, int usage,
     }
 
     *pStride = alignedw;
+#ifdef NO_IOMMU
+    // Adreno 220's CPU screenshot readback packs the visible FBO width.
+    // SurfaceFlinger consumes this buffer in software on the unsupported
+    // GPU-to-CPU path. Retain the aligned allocation/handle for EGL import.
+    const int cpuCaptureUsage = GRALLOC_USAGE_SW_READ_OFTEN |
+            GRALLOC_USAGE_SW_WRITE_OFTEN | GRALLOC_USAGE_HW_RENDER |
+            GRALLOC_USAGE_HW_TEXTURE;
+    const char *program = getprogname();
+    const char *name = program ? strrchr(program, '/') : NULL;
+    name = name ? name + 1 : program;
+    if (w != alignedw && grallocFormat == HAL_PIXEL_FORMAT_RGBA_8888 &&
+            usage == cpuCaptureUsage && name &&
+            !strcmp(name, "surfaceflinger") &&
+            property_get("ro.bq.gpu_to_cpu_unsupported", property, "0") > 0 &&
+            !strcmp(property, "1")) {
+        *pStride = w;
+    }
+#endif
     return 0;
 }
 
