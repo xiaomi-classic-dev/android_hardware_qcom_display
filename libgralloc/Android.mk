@@ -33,6 +33,7 @@ include $(BUILD_SHARED_LIBRARY)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE                  := libmemalloc
+LOCAL_VENDOR_MODULE := true
 LOCAL_MODULE_TAGS             := optional
 LOCAL_SHARED_LIBRARIES        := $(common_libs) libqdutils libdl
 LOCAL_CFLAGS                  := $(common_flags) -DLOG_TAG=\"qdmemalloc\"
