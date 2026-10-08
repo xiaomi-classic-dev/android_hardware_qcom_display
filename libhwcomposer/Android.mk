@@ -7,8 +7,8 @@ LOCAL_MODULE_RELATIVE_PATH    := hw
 LOCAL_VENDOR_MODULE           := true
 LOCAL_MODULE_TAGS             := optional
 LOCAL_C_INCLUDES              := $(common_includes) \
-                                 $(TOP)/external/skia/include/core \
-                                 $(TOP)/external/skia/include/images
+                                 external/skia/include/core \
+                                 external/skia/include/images
 LOCAL_SHARED_LIBRARIES        := $(common_libs) libEGL liboverlay \
                                  libexternal libqdutils libhardware_legacy \
                                  libdl libmemalloc libqservice libsync \
