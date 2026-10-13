@@ -47,15 +47,27 @@ QClient::QClient(hwc_context_t *ctx) : mHwcContext(ctx),
 
 QClient::~QClient()
 {
+    if (mMediaPlayerService != nullptr)
+        mMediaPlayerService->unlinkToDeath(mMPDeathNotifier);
     ALOGD_IF(QCLIENT_DEBUG,"QClient Destructor invoked");
+}
+
+void QClient::watchMediaPlayerService() {
+    const sp<IBinder> service = defaultServiceManager()->checkService(
+            String16("media.player"));
+    if (service == nullptr)
+        return;
+    Mutex::Autolock lock(mMediaServiceLock);
+    if (service == mMediaPlayerService)
+        return;
+    if (mMediaPlayerService != nullptr)
+        mMediaPlayerService->unlinkToDeath(mMPDeathNotifier);
+    if (service->linkToDeath(mMPDeathNotifier) == NO_ERROR)
+        mMediaPlayerService = service;
 }
 
 static void securing(hwc_context_t *ctx, uint32_t startEnd) {
     Locker::Autolock _sl(ctx->mDrawLock);
-    //The only way to make this class in this process subscribe to media
-    //player's death.
-    IMediaDeathNotifier::getMediaPlayerService();
-
     ctx->mSecuring = startEnd;
     //We're done securing
     if(startEnd == IQService::END)
@@ -74,7 +86,7 @@ static void unsecuring(hwc_context_t *ctx, uint32_t startEnd) {
         ctx->proc->invalidate(ctx->proc);
 }
 
-void QClient::MPDeathNotifier::died() {
+void QClient::MPDeathNotifier::binderDied(const wp<IBinder>&) {
     Locker::Autolock _sl(mHwcContext->mDrawLock);
     ALOGD_IF(QCLIENT_DEBUG, "Media Player died");
     mHwcContext->mSecuring = false;
@@ -180,6 +192,7 @@ status_t QClient::notifyCallback(uint32_t command, const Parcel* inParcel,
 
     switch(command) {
         case IQService::SECURING:
+            watchMediaPlayerService();
             securing(mHwcContext, inParcel->readInt32());
             break;
         case IQService::UNSECURING:
