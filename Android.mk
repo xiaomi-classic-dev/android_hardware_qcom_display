@@ -18,6 +18,8 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := display_headers
+LOCAL_HEADER_LIBRARIES := libhardware_headers
+LOCAL_EXPORT_HEADER_LIBRARY_HEADERS := libhardware_headers
 LOCAL_EXPORT_C_INCLUDE_DIRS := \
     $(display_top)/libcopybit \
     $(display_top)/libexternal \
