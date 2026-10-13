@@ -25,6 +25,7 @@ LOCAL_CFLAGS                  := $(common_flags) -DLOG_TAG=\"qdcopybit\"
 LOCAL_HEADER_LIBRARIES        := generated_kernel_headers display_headers
 
 ifeq ($(TARGET_USES_C2D_COMPOSITION),true)
+    LOCAL_HEADER_LIBRARIES += gl_headers
     LOCAL_CFLAGS += -DCOPYBIT_Z180=1 -DC2D_SUPPORT_DISPLAY=1
     LOCAL_SRC_FILES := copybit_c2d.cpp software_converter.cpp
     include $(BUILD_SHARED_LIBRARY)
