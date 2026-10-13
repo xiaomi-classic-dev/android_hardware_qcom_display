@@ -37,14 +37,72 @@
 #include <sys/stat.h>
 #include <comptype.h>
 #ifdef QCOM_BSP
-#include <SkBitmap.h>
-#include <SkImageEncoder.h>
+#include <png.h>
+#include <stdint.h>
+#include <vector>
 #endif
 
 #define PIXEL_FMRT_LEN 32
 #define DUMP_BUF_SIZE  128
 
 namespace qhwc {
+
+#ifdef QCOM_BSP
+static bool dumpLayerPng(const private_handle_t* hnd, const char* filename)
+{
+    const int width = getWidth(hnd);
+    const int height = getHeight(hnd);
+    const bool rgb565 = hnd->format == HAL_PIXEL_FORMAT_RGB_565;
+    const size_t bytesPerPixel = rgb565 ? 2 : 4;
+    if (width <= 0 || height <= 0 || hnd->size <= 0 ||
+            static_cast<size_t>(width) > static_cast<size_t>(hnd->size) /
+                    bytesPerPixel / static_cast<size_t>(height))
+        return false;
+
+    const size_t pixels = static_cast<size_t>(width) * height;
+    if (pixels > SIZE_MAX / 4)
+        return false;
+    std::vector<uint8_t> rgba(pixels * 4);
+    const uint8_t* source = reinterpret_cast<const uint8_t*>(hnd->base);
+    for (size_t i = 0; i < pixels; ++i) {
+        uint8_t* target = rgba.data() + i * 4;
+        const uint8_t* pixel = source + i * bytesPerPixel;
+        if (rgb565) {
+            const uint16_t value = pixel[0] | (pixel[1] << 8);
+            const uint8_t r = (value >> 11) & 31;
+            const uint8_t g = (value >> 5) & 63;
+            const uint8_t b = value & 31;
+            target[0] = (r << 3) | (r >> 2);
+            target[1] = (g << 2) | (g >> 4);
+            target[2] = (b << 3) | (b >> 2);
+            target[3] = 255;
+        } else {
+            const bool bgra = hnd->format == HAL_PIXEL_FORMAT_BGRA_8888;
+            target[0] = pixel[bgra ? 2 : 0];
+            target[1] = pixel[1];
+            target[2] = pixel[bgra ? 0 : 2];
+            target[3] = hnd->format == HAL_PIXEL_FORMAT_RGBA_8888 ? pixel[3] : 255;
+            // Skia previously interpreted RGBA layers as premultiplied.
+            if (target[3] != 0 && target[3] != 255) {
+                for (size_t channel = 0; channel < 3; ++channel) {
+                    const unsigned value = (target[channel] * 255u + target[3] / 2) /
+                            target[3];
+                    target[channel] = value > 255 ? 255 : value;
+                }
+            }
+        }
+    }
+    png_image image = {};
+    image.version = PNG_IMAGE_VERSION;
+    image.width = width;
+    image.height = height;
+    image.format = PNG_FORMAT_RGBA;
+    const bool result = png_image_write_to_file(&image, filename, 0,
+            rgba.data(), 0, nullptr) != 0;
+    png_image_free(&image);
+    return result;
+}
+#endif
 
 // MAX_ALLOWED_FRAMEDUMPS must be capped to (LONG_MAX - 1)
 // 60fps => 216000 frames per hour
@@ -312,34 +370,22 @@ void HwcDebug::dumpLayer(size_t layerIndex, hwc_layer_1_t hwLayers[])
     if (needDumpPng && hnd->base) {
         bool bResult = false;
         char dumpFilename[PATH_MAX];
-        SkColorType colorType = kUnknown_SkColorType;
-        SkAlphaType alphaType = kUnknown_SkAlphaType;
+        bool supportedFormat = false;
         snprintf(dumpFilename, PATH_MAX, "%s/sfdump%03d.layer%d.%s.png", mDumpDirPng,
             mDumpCntrPng, layerIndex, mDisplayName);
 
         switch (hnd->format) {
             case HAL_PIXEL_FORMAT_RGBA_8888:
-                alphaType = kPremul_SkAlphaType;
-                colorType = kRGBA_8888_SkColorType;
-                break;
             case HAL_PIXEL_FORMAT_RGBX_8888:
             case HAL_PIXEL_FORMAT_BGRA_8888:
-                alphaType = kOpaque_SkAlphaType;
-                colorType = kRGBA_8888_SkColorType;
-                break;
             case HAL_PIXEL_FORMAT_RGB_565:
-                alphaType = kOpaque_SkAlphaType;
-                colorType = kRGB_565_SkColorType;
+                supportedFormat = true;
                 break;
             default:
                 break;
         }
-        if (kUnknown_SkColorType != colorType) {
-            SkImageInfo info = SkImageInfo::Make(getWidth(hnd), getHeight(hnd),
-                                                 colorType, alphaType);
-            SkPixmap pixmap(info, (const void*)hnd->base, info.minRowBytes());
-            SkFILEWStream file(dumpFilename);
-            bResult = SkEncodeImage(&file, pixmap, SkEncodedImageFormat::kPNG, 100);
+        if (supportedFormat) {
+            bResult = dumpLayerPng(hnd, dumpFilename);
             ALOGI("Display[%s] Layer[%d] %s Dump to %s: %s",
                 mDisplayName, layerIndex, dumpLogStrPng,
                 dumpFilename, bResult ? "Success" : "Fail");
@@ -435,4 +481,3 @@ void HwcDebug::getHalPixelFormatStr(int format, char pixFormatStr[])
 }
 
 } // namespace qhwc
-
